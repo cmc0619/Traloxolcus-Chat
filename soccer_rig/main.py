@@ -129,8 +129,9 @@ def get_config() -> Dict[str, Any]:
 def update_config(update: ConfigUpdate) -> Dict[str, Any]:
     updated_fields = {}
     for field, value in update.model_dump(exclude_none=True).items():
-        setattr(settings, field, value)
-        updated_fields[field] = value
+        if hasattr(settings, field):
+            setattr(settings, field, value)
+            updated_fields[field] = value
     return {"updated": updated_fields}
 
 
@@ -157,12 +158,12 @@ def self_test() -> SelfTestResult:
     try:
         recorder._assert_disk_space()
     except RuntimeError:
-        return SelfTestResult(ok=False, details=details + ["Insufficient free space"])
+        return SelfTestResult(passed=False, details=details + ["Insufficient free space"])
     try:
         recorder._assert_camera_available()
     except RuntimeError as exc:
-        return SelfTestResult(ok=False, details=details + [str(exc)])
-    return SelfTestResult(ok=True, details=details)
+        return SelfTestResult(passed=False, details=details + [str(exc)])
+    return SelfTestResult(passed=True, details=details)
 
 
 @app.post("/api/v1/update/check")

@@ -168,14 +168,28 @@ class ConfirmRequest(BaseModel):
 
 class ConfigUpdate(BaseModel):
     camera_id: Optional[str] = None
-    bitrate_mbps: Optional[float] = None
-    codec: Optional[str] = None
+    bitrate_mbps: Optional[float] = Field(None, ge=5, le=50)
+    codec: Optional[str] = Field(None, pattern="^(h264|h265)$")
+    audio_enabled: Optional[bool] = None
+    production_mode: Optional[bool] = None
+    delete_after_confirm: Optional[bool] = None
     ssid: Optional[str] = None
     ap_fallback_seconds: Optional[int] = None
     ap_ssid: Optional[str] = None
     ap_password: Optional[str] = None
-    production_mode: Optional[bool] = None
-    delete_after_confirm: Optional[bool] = None
+    wifi_mesh_ssid: Optional[str] = None
+    wifi_password: Optional[str] = None
+    duration_minutes_default: Optional[int] = Field(None, ge=1, le=240)
+    free_space_min_gb: Optional[int] = Field(None, ge=1, le=500)
+    min_free_gb: Optional[float] = Field(None, ge=0)
+    resolution: Optional[str] = None
+    fps: Optional[int] = None
+    ap_ssid_prefix: Optional[str] = None
+    ap_mode_timeout_sec: Optional[int] = None
+    ntp_master_id: Optional[str] = None
+    sync_offset_warn_ms: Optional[int] = None
+    update_repo: Optional[str] = None
+    update_channel: Optional[str] = None
 
 
 class RecordStartRequest(BaseModel):
@@ -213,18 +227,6 @@ class TestRecordingResult(BaseModel):
     checksum: dict
 
 
-class ConfigUpdate(BaseModel):
-    bitrate_mbps: Optional[int] = Field(None, ge=5, le=50)
-    codec: Optional[str] = Field(None, pattern="^(h264|h265)$")
-    audio_enabled: Optional[bool] = None
-    production_mode: Optional[bool] = None
-    delete_after_confirm: Optional[bool] = None
-    wifi_mesh_ssid: Optional[str] = None
-    wifi_password: Optional[str] = None
-    duration_minutes_default: Optional[int] = Field(None, ge=1, le=240)
-    free_space_min_gb: Optional[int] = Field(None, ge=1, le=500)
-
-
 class UpdateCheckResponse(BaseModel):
     current_version: str
     available_version: Optional[str]
@@ -236,8 +238,3 @@ class UpdateApplyResponse(BaseModel):
     started: bool
     message: str
     applied_version: Optional[str] = None
-
-
-class SelfTestResult(BaseModel):
-    ok: bool
-    details: List[str]
