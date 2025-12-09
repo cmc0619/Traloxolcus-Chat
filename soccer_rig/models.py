@@ -9,15 +9,24 @@ from pydantic import BaseModel, Field
 class DiskStatus(BaseModel):
     total_gb: float = Field(..., description="Total storage in gigabytes")
     free_gb: float = Field(..., description="Free storage in gigabytes")
-    estimated_minutes_remaining: int = Field(..., description="Estimated minutes left for recording at current bitrate")
+    used_gb: float | None = Field(
+        default=None, description="Used storage in gigabytes; optional for simulated environments"
+    )
+    free_percent: float | None = Field(
+        default=None, description="Free space percentage when available from the filesystem"
+    )
+    estimated_minutes_remaining: int | None = Field(
+        default=None,
+        description="Estimated minutes left for recording at current bitrate. Optional when bitrate is unknown.",
+    )
 
 
 class SyncStatus(BaseModel):
-    role: str = Field(..., description="ntp-master or ntp-client")
-    offset_ms: float = Field(..., description="Current time offset in milliseconds relative to master")
-    confidence: str = Field(..., description="qualitative confidence in sync")
-    master_timestamp: datetime = Field(..., description="Timestamp on master when recording started")
-    local_timestamp: datetime = Field(..., description="Local timestamp when recording started")
+    role: Literal["master", "client"] = "client"
+    offset_ms: float = 0.0
+    confidence: str = "unknown"
+    master_timestamp: Optional[datetime] = None
+    local_timestamp: Optional[datetime] = None
 
 
 class RecordingInfo(BaseModel):
@@ -85,18 +94,11 @@ class UpdateStatus(BaseModel):
 class SelfTestResult(BaseModel):
     passed: bool
     details: List[str] = Field(default_factory=list)
-    total_gb: float
-    free_gb: float
-    used_gb: float
-    free_percent: float
+    total_gb: Optional[float] = None
+    free_gb: Optional[float] = None
+    used_gb: Optional[float] = None
+    free_percent: Optional[float] = None
     est_record_minutes_remaining: Optional[int] = None
-    
-
-class SyncStatus(BaseModel):
-    role: Literal["master", "client"] = "client"
-    offset_ms: float = 0.0
-    confidence: str = "unknown"
-    master_timestamp: Optional[datetime] = None
 
 
 class RecordingDescriptor(BaseModel):
