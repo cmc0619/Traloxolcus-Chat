@@ -293,34 +293,21 @@
         async function selectSession(sessionId) {
             activeSession = sessionId;
             document.querySelectorAll('.session-pill').forEach(btn => btn.classList.remove('active'));
-            try {
-                const detail = await apiFetch(`/api/v1/sessions/${sessionId}`);
-                document.getElementById('sessionTitle').textContent = `Session ${detail.id} — ${detail.camera_assets} cams, ${detail.events} events`;
-                currentProxy = detail.latest_proxy;
-                fullResUrl = detail.stitched_fullres;
-                const openFullres = document.getElementById('openFullres');
-                if (fullResUrl) {
-                    openFullres.disabled = false;
-                    openFullres.onclick = () => window.open(absoluteMedia(fullResUrl), '_blank');
-                } else {
-                    openFullres.disabled = true;
-                    openFullres.onclick = null;
-                }
-                updateVideoSource(currentProxy);
-                renderEvents(detail.events_list);
-            } catch (error) {
-                document.getElementById('sessionTitle').textContent = `Failed to load session ${sessionId}`;
-                document.getElementById('eventsGrid').innerHTML = `<div class="muted">${error.message}</div>`;
-                currentProxy = '';
-                fullResUrl = '';
-                updateVideoSource('');
-                return;
+            const detail = await apiFetch(`/api/v1/sessions/${sessionId}`);
+            document.getElementById('sessionTitle').textContent = `Session ${detail.id} — ${detail.camera_assets} cams, ${detail.events} events`;
+            currentProxy = detail.latest_proxy;
+            fullResUrl = detail.stitched_fullres;
+            const openFullres = document.getElementById('openFullres');
+            if (fullResUrl) {
+                openFullres.disabled = false;
+                openFullres.onclick = () => window.open(absoluteMedia(fullResUrl), '_blank');
+            } else {
+                openFullres.disabled = true;
+                openFullres.onclick = null;
             }
-            try {
-                renderSessions(await apiFetch('/api/v1/sessions'));
-            } catch (error) {
-                document.getElementById('sessionList').innerHTML = `<div class="muted">${error.message}</div>`;
-            }
+            updateVideoSource(currentProxy);
+            renderEvents(detail.events_list);
+            renderSessions(await apiFetch('/api/v1/sessions'));
         }
 
         function jumpTo(milliseconds) {
@@ -343,15 +330,11 @@
                 document.getElementById('searchResults').innerHTML = '<div class="muted">Enter a phrase to search.</div>';
                 return;
             }
-            try {
-                const data = await apiFetch(`/api/v1/search?q=${encodeURIComponent(query)}&session_id=${encodeURIComponent(activeSession)}`);
-                renderSearch(data.results);
-                if (data.stitched_proxy && !currentProxy) {
-                    currentProxy = data.stitched_proxy;
-                    updateVideoSource(currentProxy);
-                }
-            } catch (error) {
-                document.getElementById('searchResults').innerHTML = `<div class="muted">${error.message}</div>`;
+            const data = await apiFetch(`/api/v1/search?q=${encodeURIComponent(query)}&session_id=${encodeURIComponent(activeSession)}`);
+            renderSearch(data.results);
+            if (data.stitched_proxy && !currentProxy) {
+                currentProxy = data.stitched_proxy;
+                updateVideoSource(currentProxy);
             }
         }
 
