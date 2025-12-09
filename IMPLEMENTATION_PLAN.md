@@ -1,14 +1,14 @@
 # Multi-Camera Pi 5 Soccer Rig – Implementation Plan
 
-This plan aligns SPEC.md v1.2 with a concrete, phased roadmap for the three Raspberry Pi 5 camera nodes (CAM_L, CAM_C, CAM_R). It merges the original work packages with the alternative phase-based breakdown, keeping clarity and low ceremony while highlighting decisions still pending.
+This plan aligns SPEC.md v1.2 with a concrete, phased roadmap for the three Raspberry Pi 5 camera nodes (CAM_L, CAM_C, CAM_R). It merges the earlier pull requests (3, 4, 5, 7, and 8) into a single service-oriented roadmap that prioritizes boring, observable behavior and keeps Production Mode state in-memory whenever possible.
 
 ## Core Services and State Model
-- **recorder:** owns camera pipeline, session IDs, file naming, 4K30 encode settings, and dropped-frame/error signaling.
-- **sync-agent:** manages NTP/Chrony config; exposes offset/confidence and master/local timestamps; triggers the optional start beep.
+- **recorder:** owns camera pipeline, session IDs, file naming, 4K30 encode settings, dropped-frame/error signaling, and start/stop control gates.
+- **sync-agent:** manages NTP/Chrony config; exposes offset/confidence and master/local timestamps; triggers the optional start beep after a cross-node readiness check so the tone is aligned.
 - **api:** aiohttp/FastAPI-style REST layer with SSE/websocket hooks for live status; gates control routes when prerequisites (camera, NVMe, battery, sync) are unhealthy.
 - **ui:** mobile-first dashboard served by the API process; reuses REST endpoints for controls and settings.
-- **updater:** GitHub Release checker/applier that is update-safe during active recordings.
-- **housekeeper:** tracks free space, offload confirmations, retention rules, and AP fallback transitions.
+- **updater:** GitHub Release checker/applier that is update-safe during active recordings; optional retry queue when an update is deferred by a recording.
+- **housekeeper:** tracks free space, offload confirmations, retention rules, metrics, and AP fallback transitions so the UI can reflect mesh/AP state.
 
 Production Mode keeps state in-memory; only manifests and recordings are persisted. A small versioned config file (TOML/JSON/YAML) is editable via `/api/v1/config` and mirrored in UI settings. Guard rails refuse recording when camera/NVMe are missing, battery is critical, or sync offset exceeds threshold.
 
@@ -29,7 +29,7 @@ Production Mode keeps state in-memory; only manifests and recordings are persist
 2. **Sync telemetry**
    - `services/sync/telemetry.py` polls `chronyc tracking`, publishes offset/confidence, and feeds the status endpoint.
 3. **Start beep**
-   - `scripts/beep_start.sh` plays a short tone via ALSA; the recorder triggers it at record start (guarded to run only once across nodes).
+   - `scripts/beep_start.sh` plays a short tone via ALSA; the recorder triggers it at record start (guarded to run only once across nodes and only after readiness is confirmed).
 
 ## Phase 3: Recording Service
 1. **Camera pipeline**
@@ -39,7 +39,7 @@ Production Mode keeps state in-memory; only manifests and recordings are persist
    - Naming: `{SESSION_ID}_{CAM_ID}_{YYYYMMDD}_{HHMMSS}.mp4` with optional audio channel.
    - `services/recorder/manifest.py` writes `{SESSION_ID}_{CAM_ID}.json` containing start times (master/local), offset ms, duration, resolution/FPS/codec/bitrate, dropped frames, checksum, snapshot (Lock View), camera position, software version, and `offloaded` flag.
 3. **Test recording mode**
-   - `POST /api/v1/selftest` triggers a 10-second clip and returns pass/fail with encoder and disk-write errors surfaced.
+   - `POST /api/v1/selftest` triggers a 10-second clip, hashes it, deletes it, and returns pass/fail with encoder and disk-write errors surfaced.
 4. **Grandma Mode (optional)**
    - Low-res 720p, 2–4 Mbps stream runs independently of 4K capture and auto-disables on high CPU load.
 
@@ -57,15 +57,15 @@ Production Mode keeps state in-memory; only manifests and recordings are persist
 1. **Checksum confirmation**
    - `/api/v1/recordings/confirm` verifies SHA-256, sets `offloaded=true`, and updates the manifest.
 2. **Auto-delete policy**
-   - Background task removes oldest confirmed files when free space is below threshold or “delete after confirm” is enabled.
+   - Background task removes oldest confirmed files when free space is below threshold or “delete after confirm” is enabled; retains manual “delete all offloaded” control.
 3. **Bulk download**
    - Simple HTTP file server under `/recordings/` with index JSON for session manifests and recordings; streams to avoid blocking ongoing writes.
 
 ## Phase 6: Updates & Operations
 1. **GitHub updater**
-   - `services/updater/` polls Releases, downloads `.tar.gz`, verifies checksum (if provided), stages to temp, swaps symlink or installs package, and restarts services; returns HTTP 409 if recording is active.
+   - `services/updater/` polls Releases, downloads `.tar.gz`, verifies checksum (if provided), stages to temp, swaps symlink or installs package, and restarts services; returns HTTP 409 if recording is active and may queue retries until idle.
 2. **Modes & logging**
-   - Production Mode: in-memory status only, minimal `/logs`, no request/access logs, no persistent disk logging, yet still surface transient errors.
+   - Production Mode: in-memory status only, minimal `/logs`, no request/access logs, no persistent disk logging, yet still surface transient errors and tones for degraded states (temperature, battery, camera presence, NVMe health, sync offset).
    - Development Mode: verbose logs under `/var/log/soccer_rig/`; toggle via UI and config endpoint.
 3. **Shutdown path**
    - `/api/v1/shutdown` stops recording, syncs storage, unmounts NVMe, and powers down gracefully.
@@ -96,3 +96,4 @@ Production Mode keeps state in-memory; only manifests and recordings are persist
 ## Next Steps
 - Scaffold repository structure (Phase 1) and ship minimal `status` and `config` endpoints so UI work can start.
 - Create systemd service definitions for sync master/client and recorder placeholders to exercise control API end-to-end.
+- Wire the housekeeper to track mesh/AP transitions and surface them through `/status` for early UI integration.
