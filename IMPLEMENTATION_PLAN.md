@@ -12,6 +12,11 @@ This plan aligns SPEC.md v1.2 with a concrete, phased roadmap for the three Rasp
 
 Production Mode keeps state in-memory; only manifests and recordings are persisted. A small versioned config file (TOML/JSON/YAML) is editable via `/api/v1/config` and mirrored in UI settings. Guard rails refuse recording when camera/NVMe are missing, battery is critical, or sync offset exceeds threshold.
 
+## Observability & Health Signals
+- Production Mode: transient in-memory error fields only; `/logs` returns minimal info and avoids request/access logging.
+- Development Mode: structured logs under `/var/log/soccer_rig/` with optional ruff/black/mypy hooks enabled for local debugging.
+- Minimal metrics view (REST or UI) surfaces encode FPS, dropped frames, free space, CPU temperature, and sync offset per node; short tones flag degraded states (temperature, battery, camera presence, NVMe health, or sync drift).
+
 ## Phase 1: Foundations
 1. **Repository bootstrap**
    - Layout: `services/recorder`, `services/sync`, `services/web`, `services/updater`, `services/models`, `scripts/`, and `configs/` for defaults.
