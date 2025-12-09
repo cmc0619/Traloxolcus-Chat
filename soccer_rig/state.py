@@ -133,8 +133,14 @@ class RigState:
         return self.update_check()
 
     def update_config(self, partial: dict) -> Config:
+        allowed_fields = set(Config.model_fields.keys())
+        unsupported = set(partial) - allowed_fields
+        if unsupported:
+            unsupported_list = ", ".join(sorted(unsupported))
+            raise ValueError(f"Unsupported config fields: {unsupported_list}")
+
         for key, value in partial.items():
-            if value is not None and hasattr(self.config, key):
+            if value is not None:
                 setattr(self.config, key, value)
         # ensure status reflects updated config
         self.camera_status.camera_id = self.config.camera_id

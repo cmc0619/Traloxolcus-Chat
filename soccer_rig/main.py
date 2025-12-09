@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 
 from .config import settings
 from .models import (
+    Config,
     ConfigUpdate,
     ConfirmRequest,
     SelfTestResult,
@@ -127,12 +128,17 @@ def get_config() -> Dict[str, Any]:
 
 @app.post("/api/v1/config")
 def update_config(update: ConfigUpdate) -> Dict[str, Any]:
-    updated_fields = {}
-    for field, value in update.model_dump(exclude_none=True).items():
-        if hasattr(settings, field):
-            setattr(settings, field, value)
-            updated_fields[field] = value
-    return {"updated": updated_fields}
+    partial = update.model_dump(exclude_none=True)
+    allowed_fields = set(Config.model_fields.keys())
+    unsupported = set(partial) - allowed_fields
+    if unsupported:
+        detail = ", ".join(sorted(unsupported))
+        raise HTTPException(status_code=400, detail=f"Unsupported config fields: {detail}")
+
+    for field, value in partial.items():
+        setattr(settings, field, value)
+
+    return {"updated": partial}
 
 
 @app.get("/api/v1/logs")
