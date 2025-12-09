@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+import psutil
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi.responses import HTMLResponse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +38,80 @@ def get_db() -> Database:
 
 def get_storage() -> Storage:
     return _storage
+
+
+def _system_metrics() -> dict:
+    disk = psutil.disk_usage("/")
+    memory = psutil.virtual_memory()
+    return {
+        "disk": {
+            "total_gb": round(disk.total / (1024**3), 2),
+            "used_gb": round(disk.used / (1024**3), 2),
+            "percent": disk.percent,
+        },
+        "memory": {
+            "total_gb": round(memory.total / (1024**3), 2),
+            "used_gb": round(memory.used / (1024**3), 2),
+            "percent": memory.percent,
+        },
+        "cpu_percent": psutil.cpu_percent(interval=0.1),
+    }
+
+
+def _gpu_metrics() -> list[dict]:
+    cmd = [
+        "nvidia-smi",
+        "--query-gpu=name,memory.total,memory.used,utilization.gpu",
+        "--format=csv,noheader,nounits",
+    ]
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError:
+        return []
+    except subprocess.CalledProcessError:
+        return []
+
+    gpus: list[dict] = []
+    for line in completed.stdout.strip().splitlines():
+        name, mem_total, mem_used, util = [token.strip() for token in line.split(",")]
+        gpus.append(
+            {
+                "name": name,
+                "memory_total_mb": float(mem_total),
+                "memory_used_mb": float(mem_used),
+                "utilization_percent": float(util),
+            }
+        )
+    return gpus
+
+
+def _session_status(db: Database) -> list[dict]:
+    sessions = db.sessions()
+    status_payload: list[dict] = []
+    for row in sessions:
+        stitched = db.latest_stitched_for_session(row["id"])
+        viewer_ready = stitched is not None
+        waiting_for_cameras = row["camera_assets"] < 3
+        status_payload.append(
+            {
+                "id": row["id"],
+                "started_at": row["started_at"],
+                "camera_assets": row["camera_assets"],
+                "stitched_assets": row["stitched_assets"],
+                "events": row["events"],
+                "viewer_ready": viewer_ready,
+                "waiting_for_cameras": waiting_for_cameras,
+            }
+        )
+    return status_payload
+
+
+def _status_payload(db: Database) -> dict:
+    return {
+        "system": _system_metrics(),
+        "gpu": _gpu_metrics(),
+        "sessions": _session_status(db),
+    }
 
 
 @app.post("/api/v1/upload", response_model=UploadResponse)
@@ -187,6 +268,104 @@ async def events_for_session(session_id: str, db: Database = Depends(get_db)) ->
         )
         for row in events
     ]
+
+
+@app.get("/api/v1/status")
+async def status_report(db: Database = Depends(get_db)) -> dict:
+    return _status_payload(db)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def status_page(db: Database = Depends(get_db)) -> HTMLResponse:
+    payload = _status_payload(db)
+    gpu_section = """<p>No GPU detected.</p>""" if not payload["gpu"] else "".join(
+        f"<div class='card'><h3>{gpu['name']}</h3><p>Memory: {gpu['memory_used_mb']:.0f} / {gpu['memory_total_mb']:.0f} MB</p><p>Utilization: {gpu['utilization_percent']}%</p></div>"
+        for gpu in payload["gpu"]
+    )
+    sessions_section = """<p>No sessions ingested.</p>""" if not payload["sessions"] else "".join(
+        """
+        <div class='card'>
+            <h3>Session {id}</h3>
+            <p>Started: {started_at}</p>
+            <p>Cameras: {camera_assets} / 3</p>
+            <p>Stitched assets: {stitched_assets}</p>
+            <p>Events: {events}</p>
+            <p class='{viewer_class}'>Viewer upload ready: {viewer_ready}</p>
+            <p class='{waiting_class}'>Waiting for cameras: {waiting}</p>
+        </div>
+        """.format(
+            id=session["id"],
+            started_at=session["started_at"],
+            camera_assets=session["camera_assets"],
+            stitched_assets=session["stitched_assets"],
+            events=session["events"],
+            viewer_ready="Yes" if session["viewer_ready"] else "No",
+            waiting="Yes" if session["waiting_for_cameras"] else "No",
+            viewer_class="ok" if session["viewer_ready"] else "warn",
+            waiting_class="warn" if session["waiting_for_cameras"] else "ok",
+        )
+        for session in payload["sessions"]
+    )
+
+    html = f"""
+    <html>
+    <head>
+        <title>Processing Station Status</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; background: #0b1021; color: #e5e7ef; margin: 0; padding: 0; }}
+            header {{ background: #131938; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }}
+            h1 {{ margin: 0; font-size: 20px; }}
+            .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 24px; }}
+            .card {{ background: #192344; padding: 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }}
+            .metric {{ font-size: 24px; margin: 4px 0; }}
+            .muted {{ color: #9aa3c2; }}
+            .warn {{ color: #f6a609; font-weight: bold; }}
+            .ok {{ color: #45d483; font-weight: bold; }}
+            a {{ color: #8ac7ff; }}
+        </style>
+    </head>
+    <body>
+        <header>
+            <div>
+                <h1>Processing Station Status</h1>
+                <div class='muted'>System health, ingest, and viewer readiness</div>
+            </div>
+            <div class='muted'>Updated {datetime.now(timezone.utc).isoformat()}</div>
+        </header>
+        <div class='grid'>
+            <div class='card'>
+                <h3>Disk</h3>
+                <div class='metric'>{payload['system']['disk']['used_gb']} / {payload['system']['disk']['total_gb']} GB</div>
+                <div class='muted'>{payload['system']['disk']['percent']}% used</div>
+            </div>
+            <div class='card'>
+                <h3>Memory</h3>
+                <div class='metric'>{payload['system']['memory']['used_gb']} / {payload['system']['memory']['total_gb']} GB</div>
+                <div class='muted'>{payload['system']['memory']['percent']}% used</div>
+            </div>
+            <div class='card'>
+                <h3>CPU</h3>
+                <div class='metric'>{payload['system']['cpu_percent']}%</div>
+                <div class='muted'>Recent utilization</div>
+            </div>
+        </div>
+        <div class='grid'>
+            <div class='card'>
+                <h2>GPU</h2>
+                {gpu_section}
+            </div>
+            <div class='card'>
+                <h2>Sessions</h2>
+                {sessions_section}
+            </div>
+        </div>
+        <div style='padding: 0 24px 24px;'>
+            <p class='muted'>API endpoints: <a href='/docs'>/docs</a> | <a href='/api/v1/status'>/api/v1/status</a></p>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 @app.get("/healthz")
