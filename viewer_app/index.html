@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Processing Station Viewer</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 0; background: radial-gradient(circle at 20% 20%, #19204d, #0c0f21 45%); color: #e8ecff; }
+        * { box-sizing: border-box; }
+        a { color: #73f0c6; font-weight: 600; }
+        .hero { display: flex; justify-content: space-between; align-items: center; padding: 28px 36px; border-bottom: 1px solid rgba(255,255,255,0.08); background: linear-gradient(120deg, rgba(72,123,255,0.22), rgba(22,217,150,0.12)); }
+        .eyebrow { letter-spacing: 0.1em; text-transform: uppercase; color: #8db4ff; font-size: 12px; font-weight: 700; }
+        h1 { margin: 6px 0 8px; font-size: 28px; }
+        .muted { color: #9fb4d8; }
+        .layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; padding: 24px 32px 40px; }
+        .card { background: rgba(18, 23, 48, 0.9); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 16px 18px; box-shadow: 0 8px 30px rgba(0,0,0,0.25); backdrop-filter: blur(4px); }
+        .card-title { font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 10px; background: rgba(255,255,255,0.06); color: #dfe7ff; font-size: 12px; }
+        .chip strong { color: #ffffff; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+        .metric { border-radius: 12px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }
+        .metric .value { font-size: 22px; font-weight: 700; margin: 6px 0; }
+        .layout .sidebar { display: flex; flex-direction: column; gap: 16px; }
+        .session-list { display: flex; flex-direction: column; gap: 10px; }
+        .session-pill { width: 100%; text-align: left; border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.02); color: #e8ecff; padding: 10px 12px; border-radius: 12px; cursor: pointer; transition: border 120ms ease, transform 120ms ease, background 120ms ease; }
+        .session-pill:hover { border-color: rgba(138,199,255,0.4); transform: translateY(-1px); }
+        .session-pill.active { border-color: #5ad1a6; background: rgba(90, 209, 166, 0.1); }
+        .content { display: flex; flex-direction: column; gap: 16px; }
+        .player-card { display: flex; flex-direction: column; gap: 12px; }
+        .video-frame { width: 100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: #05070f; max-height: 520px; }
+        .player-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .button { background: linear-gradient(135deg, #73f0c6, #4ea1ff); color: #081025; border: none; border-radius: 10px; padding: 10px 14px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.25); transition: transform 120ms ease, box-shadow 120ms ease; }
+        .button:disabled { cursor: not-allowed; opacity: 0.55; box-shadow: none; transform: none; }
+        .button:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(0,0,0,0.3); }
+        .pill-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+        .pill { padding: 10px 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; cursor: pointer; }
+        .pill .title { font-weight: 700; }
+        .pill small { color: #9fb4d8; }
+        .search-row { display: grid; grid-template-columns: 1fr 120px; gap: 10px; }
+        .search-row input { padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #e8ecff; font-size: 14px; }
+        .search-row input:focus { outline: 1px solid #73f0c6; }
+        .card-subtle { font-size: 13px; color: #9fb4d8; }
+        .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .config-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .config-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #c9d6ff; }
+        .config-grid input { padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #e8ecff; }
+        @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <header class="hero">
+        <div>
+            <div class="eyebrow">Processing Station</div>
+            <h1>Viewer, natural search, and system health</h1>
+            <div class="muted">Configure once, then jump to any moment instantly.</div>
+        </div>
+        <div class="chip" id="statusUpdated">Loading...</div>
+    </header>
+    <main class="layout">
+        <section class="sidebar">
+            <div class="card">
+                <div class="card-title">Viewer configuration</div>
+                <form id="configForm" class="config-grid">
+                    <label>API base URL
+                        <input type="url" id="apiBase" required placeholder="http://localhost:8001" />
+                    </label>
+                    <label>Username
+                        <input type="text" id="apiUser" required />
+                    </label>
+                    <label>Password
+                        <input type="password" id="apiPass" required />
+                    </label>
+                    <div style="display:flex; gap:8px;">
+                        <button class="button" type="submit" style="flex:1;">Save + reconnect</button>
+                        <button class="button" type="button" id="resetConfig" style="background: rgba(255,255,255,0.05); color:#e8ecff;">Reset</button>
+                    </div>
+                    <div class="muted" id="configStatus">Values are saved locally in your browser only.</div>
+                </form>
+            </div>
+            <div class="card">
+                <div class="card-title">System Health</div>
+                <div id="systemMetrics" class="metrics-grid">Loading...</div>
+                <div id="gpuChips" class="chip-row"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Sessions</div>
+                <div id="sessionList" class="session-list">No sessions yet.</div>
+            </div>
+        </section>
+        <section class="content">
+            <div class="card player-card">
+                <div class="card-title">Viewer</div>
+                <div class="card-subtle" id="sessionTitle">Select a session to start playback.</div>
+                <video id="viewer" class="video-frame" controls preload="metadata" controlsList="nodownload"></video>
+                <div class="player-actions">
+                    <button class="button" id="openFullres" disabled>Open full-res</button>
+                    <span class="muted" id="playerMeta">Proxy not loaded yet.</span>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">Natural language search</div>
+                <div class="search-row">
+                    <input id="searchBox" type="search" placeholder="Try 'goal', 'corner kick', or 'fast break'" />
+                    <button class="button" id="searchBtn">Search</button>
+                </div>
+                <div class="card-subtle" style="margin-top:8px;">Search runs against events stored in the backend database.</div>
+                <div id="searchResults" class="pill-grid" style="margin-top:10px;"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Events timeline</div>
+                <div id="eventsGrid" class="pill-grid"></div>
+            </div>
+        </section>
+    </main>
+    <script>
+        const storageKey = 'processingStationViewerConfig';
+        let config = loadConfig();
+        let activeSession = null;
+        let currentProxy = null;
+        let fullResUrl = null;
+
+        function guessApiBase() {
+            const { protocol, hostname } = window.location;
+            const defaultPort = '8001';
+            return `${protocol}//${hostname}:${defaultPort}`;
+        }
+
+        function loadConfig() {
+            try {
+                const stored = localStorage.getItem(storageKey);
+                if (stored) {
+                    return JSON.parse(stored);
+                }
+            } catch (error) {
+                console.warn('Unable to read stored config', error);
+            }
+            return {
+                apiBase: guessApiBase(),
+                username: 'viewer',
+                password: 'viewerpass',
+            };
+        }
+
+        function saveConfig() {
+            localStorage.setItem(storageKey, JSON.stringify(config));
+            document.getElementById('configStatus').textContent = `Saved. Using ${config.apiBase}`;
+        }
+
+        function applyConfigToForm() {
+            document.getElementById('apiBase').value = config.apiBase;
+            document.getElementById('apiUser').value = config.username;
+            document.getElementById('apiPass').value = config.password;
+            document.getElementById('configStatus').textContent = `Using ${config.apiBase}`;
+        }
+
+        function authHeaders() {
+            const token = btoa(`${config.username}:${config.password}`);
+            return { Authorization: `Basic ${token}` };
+        }
+
+        function apiUrl(path) {
+            if (path.startsWith('http://') || path.startsWith('https://')) {
+                return path;
+            }
+            return `${config.apiBase}${path}`;
+        }
+
+        function absoluteMedia(path) {
+            if (!path) return null;
+            if (path.startsWith('http://') || path.startsWith('https://')) return path;
+            if (path.startsWith('/')) return `${config.apiBase}${path}`;
+            return `${config.apiBase}/${path}`;
+        }
+
+        async function apiFetch(path) {
+            const response = await fetch(apiUrl(path), {
+                headers: authHeaders(),
+                cache: 'no-store',
+            });
+            if (!response.ok) {
+                let message = `Request failed (${response.status})`;
+                if (response.status === 401) {
+                    message = 'Unauthorized — check credentials.';
+                }
+                throw new Error(message);
+            }
+            return response.json();
+        }
+
+        function formatTime(ms) {
+            const seconds = Math.max(0, Math.floor(ms / 1000));
+            const minutes = Math.floor(seconds / 60);
+            const remaining = String(seconds % 60).padStart(2, '0');
+            return `${minutes}:${remaining}`;
+        }
+
+        function renderStatus(data) {
+            const statusUpdated = document.getElementById('statusUpdated');
+            statusUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+            const systemMetrics = document.getElementById('systemMetrics');
+            systemMetrics.innerHTML = '';
+            const metrics = [
+                { title: 'Disk', value: `${data.system.disk.used_gb} / ${data.system.disk.total_gb} GB`, detail: `${data.system.disk.percent}% used` },
+                { title: 'Memory', value: `${data.system.memory.used_gb} / ${data.system.memory.total_gb} GB`, detail: `${data.system.memory.percent}% used` },
+                { title: 'CPU', value: `${data.system.cpu_percent}%`, detail: 'Recent utilization' },
+            ];
+            metrics.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'metric';
+                div.innerHTML = `<div class="muted">${item.title}</div><div class="value">${item.value}</div><div class="muted">${item.detail}</div>`;
+                systemMetrics.appendChild(div);
+            });
+            const gpuChips = document.getElementById('gpuChips');
+            gpuChips.innerHTML = '';
+            if (!data.gpu.length) {
+                const chip = document.createElement('div');
+                chip.className = 'chip';
+                chip.textContent = 'No GPU detected';
+                gpuChips.appendChild(chip);
+            } else {
+                data.gpu.forEach(gpu => {
+                    const chip = document.createElement('div');
+                    chip.className = 'chip';
+                    chip.innerHTML = `<strong>${gpu.name}</strong> ${gpu.memory_used_mb} / ${gpu.memory_total_mb} MB • ${gpu.utilization_percent}%`;
+                    gpuChips.appendChild(chip);
+                });
+            }
+        }
+
+        function renderSessions(sessions) {
+            const list = document.getElementById('sessionList');
+            list.innerHTML = '';
+            if (!sessions.length) {
+                list.textContent = 'Waiting for sessions to arrive...';
+                return;
+            }
+            sessions.forEach(session => {
+                const btn = document.createElement('button');
+                btn.className = 'session-pill';
+                btn.textContent = `${session.id} — ${session.camera_assets} cams, ${session.events} events`;
+                btn.onclick = () => selectSession(session.id);
+                if (session.id === activeSession) btn.classList.add('active');
+                list.appendChild(btn);
+            });
+        }
+
+        function updateVideoSource(proxyPath) {
+            const viewer = document.getElementById('viewer');
+            const source = absoluteMedia(proxyPath);
+            if (!source) {
+                viewer.removeAttribute('src');
+                viewer.load();
+                document.getElementById('playerMeta').textContent = 'Proxy not loaded yet.';
+                return;
+            }
+            viewer.src = source;
+            viewer.load();
+            document.getElementById('playerMeta').textContent = `Proxy: ${source}`;
+        }
+
+        function renderEvents(events) {
+            const grid = document.getElementById('eventsGrid');
+            grid.innerHTML = '';
+            if (!events.length) {
+                grid.innerHTML = '<div class="muted">No events ingested yet.</div>';
+                return;
+            }
+            events.forEach(event => {
+                const pill = document.createElement('div');
+                pill.className = 'pill';
+                pill.innerHTML = `<div class="title">${event.type}</div><small>${formatTime(event.t_start_ms)} - ${formatTime(event.t_end_ms)}</small>`;
+                pill.onclick = () => jumpTo(event.t_start_ms);
+                grid.appendChild(pill);
+            });
+        }
+
+        function renderSearch(results) {
+            const container = document.getElementById('searchResults');
+            container.innerHTML = '';
+            if (!results.length) {
+                container.innerHTML = '<div class="muted">No matches yet. Try another phrase.</div>';
+                return;
+            }
+            results.forEach(event => {
+                const pill = document.createElement('div');
+                pill.className = 'pill';
+                pill.innerHTML = `<div class="title">${event.type}</div><small>${formatTime(event.t_start_ms)} - ${formatTime(event.t_end_ms)}</small>`;
+                pill.onclick = () => jumpTo(event.t_start_ms);
+                container.appendChild(pill);
+            });
+        }
+
+        async function selectSession(sessionId) {
+            activeSession = sessionId;
+            document.querySelectorAll('.session-pill').forEach(btn => btn.classList.remove('active'));
+            try {
+                const detail = await apiFetch(`/api/v1/sessions/${sessionId}`);
+                document.getElementById('sessionTitle').textContent = `Session ${detail.id} — ${detail.camera_assets} cams, ${detail.events} events`;
+                currentProxy = detail.latest_proxy;
+                fullResUrl = detail.stitched_fullres;
+                const openFullres = document.getElementById('openFullres');
+                if (fullResUrl) {
+                    openFullres.disabled = false;
+                    openFullres.onclick = () => window.open(absoluteMedia(fullResUrl), '_blank');
+                } else {
+                    openFullres.disabled = true;
+                    openFullres.onclick = null;
+                }
+                updateVideoSource(currentProxy);
+                renderEvents(detail.events_list);
+            } catch (error) {
+                document.getElementById('sessionTitle').textContent = `Failed to load session ${sessionId}`;
+                document.getElementById('eventsGrid').innerHTML = `<div class="muted">${error.message}</div>`;
+                currentProxy = '';
+                fullResUrl = '';
+                updateVideoSource('');
+                return;
+            }
+            try {
+                renderSessions(await apiFetch('/api/v1/sessions'));
+            } catch (error) {
+                document.getElementById('sessionList').innerHTML = `<div class="muted">${error.message}</div>`;
+            }
+        }
+
+        function jumpTo(milliseconds) {
+            const viewer = document.getElementById('viewer');
+            if (!viewer.src) {
+                alert('Load a stitched proxy first.');
+                return;
+            }
+            viewer.currentTime = milliseconds / 1000;
+            viewer.play();
+        }
+
+        async function runSearch() {
+            if (!activeSession) {
+                alert('Choose a session first.');
+                return;
+            }
+            const query = document.getElementById('searchBox').value.trim();
+            if (!query) {
+                document.getElementById('searchResults').innerHTML = '<div class="muted">Enter a phrase to search.</div>';
+                return;
+            }
+            try {
+                const data = await apiFetch(`/api/v1/search?q=${encodeURIComponent(query)}&session_id=${encodeURIComponent(activeSession)}`);
+                renderSearch(data.results);
+                if (data.stitched_proxy && !currentProxy) {
+                    currentProxy = data.stitched_proxy;
+                    updateVideoSource(currentProxy);
+                }
+            } catch (error) {
+                document.getElementById('searchResults').innerHTML = `<div class="muted">${error.message}</div>`;
+            }
+        }
+
+        async function hydrate() {
+            applyConfigToForm();
+            try {
+                const statusData = await apiFetch('/api/v1/status');
+                renderStatus(statusData);
+            } catch (error) {
+                document.getElementById('systemMetrics').innerHTML = `<div class="muted">${error.message}</div>`;
+            }
+            try {
+                const sessions = await apiFetch('/api/v1/sessions');
+                renderSessions(sessions);
+                if (sessions.length && !activeSession) {
+                    await selectSession(sessions[0].id);
+                }
+            } catch (error) {
+                document.getElementById('sessionList').innerHTML = `<div class="muted">${error.message}</div>`;
+            }
+        }
+
+        document.getElementById('searchBtn').addEventListener('click', runSearch);
+        document.getElementById('searchBox').addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                runSearch();
+            }
+        });
+
+        document.getElementById('configForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            config.apiBase = document.getElementById('apiBase').value.trim().replace(/\/$/, '');
+            config.username = document.getElementById('apiUser').value.trim();
+            config.password = document.getElementById('apiPass').value;
+            saveConfig();
+            await hydrate();
+        });
+
+        document.getElementById('resetConfig').addEventListener('click', async () => {
+            localStorage.removeItem(storageKey);
+            config = loadConfig();
+            applyConfigToForm();
+            await hydrate();
+        });
+
+        window.addEventListener('load', () => {
+            applyConfigToForm();
+            hydrate();
+        });
+    </script>
+</body>
+</html>

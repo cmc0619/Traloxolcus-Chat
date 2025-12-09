@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import os
+import secrets
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 import psutil
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.staticfiles import StaticFiles
 
 from .database import Database
 from .schemas import (
@@ -17,6 +21,7 @@ from .schemas import (
     EventsRequest,
     ImportAck,
     SearchResponse,
+    SessionDetail,
     SessionSummary,
     StitchRequest,
     StitchResponse,
@@ -27,6 +32,16 @@ from .storage import Storage
 app = FastAPI(title="Processing Station", version="0.1.0")
 _db = Database()
 _storage = Storage()
+security = HTTPBasic()
+allowed_origins = os.getenv("VIEWER_ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in allowed_origins],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+app.mount("/media", StaticFiles(directory=_storage.root), name="media")
 
 
 def get_db() -> Database:
@@ -35,6 +50,35 @@ def get_db() -> Database:
 
 def get_storage() -> Storage:
     return _storage
+
+
+def require_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
+    """Simple HTTP Basic authentication for viewer-facing endpoints."""
+
+    expected_user = os.getenv("VIEWER_USERNAME", "viewer")
+    expected_password = os.getenv("VIEWER_PASSWORD", "viewerpass")
+    username_match = secrets.compare_digest(credentials.username, expected_user)
+    password_match = secrets.compare_digest(credentials.password, expected_password)
+    if not (username_match and password_match):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+
+def _media_url(path: str | None) -> str | None:
+    """Convert a stitched asset path into a web-facing URL if possible."""
+
+    if not path:
+        return None
+    path_obj = Path(path)
+    try:
+        relative = path_obj.resolve().relative_to(_storage.root.resolve())
+    except ValueError:
+        return None
+    return f"/media/{relative.as_posix()}"
 
 
 def _system_metrics() -> dict:
@@ -211,7 +255,12 @@ async def ingest_events(request: EventsRequest, db: Database = Depends(get_db)) 
 
 
 @app.get("/api/v1/search", response_model=SearchResponse)
-async def search_events(q: str, session_id: str | None = None, db: Database = Depends(get_db)) -> SearchResponse:
+async def search_events(
+    q: str,
+    session_id: str | None = None,
+    db: Database = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> SearchResponse:
     if not q:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Query string 'q' is required")
     results = [
@@ -228,27 +277,74 @@ async def search_events(q: str, session_id: str | None = None, db: Database = De
         for row in db.search_events(q, session_id)
     ]
     proxy = db.latest_stitched_for_session(session_id) if session_id else None
-    stitched_proxy = proxy["path_proxy"] if proxy else None
+    stitched_proxy = _media_url(proxy["path_proxy"]) if proxy else None
     return SearchResponse(results=results, stitched_proxy=stitched_proxy)
 
 
 @app.get("/api/v1/sessions", response_model=list[SessionSummary])
-async def list_sessions(db: Database = Depends(get_db)) -> list[SessionSummary]:
-    return [
-        SessionSummary(
-            id=row["id"],
-            started_at=datetime.fromisoformat(row["started_at"]),
-            notes=row["notes"],
-            camera_assets=row["camera_assets"],
-            stitched_assets=row["stitched_assets"],
-            events=row["events"],
+async def list_sessions(
+    db: Database = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> list[SessionSummary]:
+    summaries: list[SessionSummary] = []
+    for row in db.sessions():
+        stitched = db.latest_stitched_for_session(row["id"])
+        summaries.append(
+            SessionSummary(
+                id=row["id"],
+                started_at=datetime.fromisoformat(row["started_at"]),
+                notes=row["notes"],
+                camera_assets=row["camera_assets"],
+                stitched_assets=row["stitched_assets"],
+                events=row["events"],
+                latest_proxy=_media_url(stitched["path_proxy"]) if stitched else None,
+            )
         )
-        for row in db.sessions()
+    return summaries
+
+
+@app.get("/api/v1/sessions/{session_id}", response_model=SessionDetail)
+async def session_detail(
+    session_id: str,
+    db: Database = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> SessionDetail:
+    session_row = db.session(session_id)
+    if not session_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    stitched = db.latest_stitched_for_session(session_id)
+    events = [
+        EventRecord(
+            id=row["id"],
+            session_id=row["session_id"],
+            type=row["type"],
+            t_start_ms=row["t_start_ms"],
+            t_end_ms=row["t_end_ms"],
+            confidence=row["confidence"],
+            source=row["source"],
+            payload_json=row["payload_json"],
+        )
+        for row in db.session_events(session_id)
     ]
+    return SessionDetail(
+        id=session_row["id"],
+        started_at=datetime.fromisoformat(session_row["started_at"]),
+        notes=session_row["notes"],
+        camera_assets=session_row["camera_assets"],
+        stitched_assets=session_row["stitched_assets"],
+        events=session_row["events"],
+        latest_proxy=_media_url(stitched["path_proxy"]) if stitched else None,
+        stitched_fullres=_media_url(stitched["path_fullres"]) if stitched else None,
+        events_list=events,
+    )
 
 
 @app.get("/api/v1/sessions/{session_id}/events", response_model=list[EventRecord])
-async def events_for_session(session_id: str, db: Database = Depends(get_db)) -> list[EventRecord]:
+async def events_for_session(
+    session_id: str,
+    db: Database = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> list[EventRecord]:
     events = db.session_events(session_id)
     if not events:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or no events")
@@ -268,102 +364,37 @@ async def events_for_session(session_id: str, db: Database = Depends(get_db)) ->
 
 
 @app.get("/api/v1/status")
-async def status_report(db: Database = Depends(get_db)) -> dict:
+async def status_report(db: Database = Depends(get_db), _: str = Depends(require_auth)) -> dict:
     return _status_payload(db)
 
 
 @app.get("/", response_class=HTMLResponse)
-async def status_page(db: Database = Depends(get_db)) -> HTMLResponse:
-    payload = _status_payload(db)
-    gpu_section = """<p>No GPU detected.</p>""" if not payload["gpu"] else "".join(
-        f"<div class='card'><h3>{gpu['name']}</h3><p>Memory: {gpu['memory_used_mb']:.0f} / {gpu['memory_total_mb']:.0f} MB</p><p>Utilization: {gpu['utilization_percent']}%</p></div>"
-        for gpu in payload["gpu"]
-    )
-    sessions_section = """<p>No sessions ingested.</p>""" if not payload["sessions"] else "".join(
-        """
-        <div class='card'>
-            <h3>Session {id}</h3>
-            <p>Started: {started_at}</p>
-            <p>Cameras: {camera_assets} / 3</p>
-            <p>Stitched assets: {stitched_assets}</p>
-            <p>Events: {events}</p>
-            <p class='{viewer_class}'>Viewer upload ready: {viewer_ready}</p>
-            <p class='{waiting_class}'>Waiting for cameras: {waiting}</p>
-        </div>
-        """.format(
-            id=session["id"],
-            started_at=session["started_at"],
-            camera_assets=session["camera_assets"],
-            stitched_assets=session["stitched_assets"],
-            events=session["events"],
-            viewer_ready="Yes" if session["viewer_ready"] else "No",
-            waiting="Yes" if session["waiting_for_cameras"] else "No",
-            viewer_class="ok" if session["viewer_ready"] else "warn",
-            waiting_class="warn" if session["waiting_for_cameras"] else "ok",
-        )
-        for session in payload["sessions"]
-    )
-
-    html = f"""
-    <html>
+async def landing(_: str = Depends(require_auth)) -> HTMLResponse:
+    html = """
+    <!doctype html>
+    <html lang="en">
     <head>
-        <title>Processing Station Status</title>
+        <meta charset="utf-8" />
+        <title>Processing Station API</title>
         <style>
-            body {{ font-family: Arial, sans-serif; background: #0b1021; color: #e5e7ef; margin: 0; padding: 0; }}
-            header {{ background: #131938; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }}
-            h1 {{ margin: 0; font-size: 20px; }}
-            .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 24px; }}
-            .card {{ background: #192344; padding: 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }}
-            .metric {{ font-size: 24px; margin: 4px 0; }}
-            .muted {{ color: #9aa3c2; }}
-            .warn {{ color: #f6a609; font-weight: bold; }}
-            .ok {{ color: #45d483; font-weight: bold; }}
-            a {{ color: #8ac7ff; }}
+            :root { color-scheme: dark; }
+            body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0b1025; color: #e8ecff; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+            .panel { max-width: 640px; padding: 28px; border-radius: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); box-shadow: 0 24px 80px rgba(0,0,0,0.35); }
+            h1 { margin-top: 0; font-size: 26px; }
+            .muted { color: #9fb4d8; }
+            a { color: #73f0c6; font-weight: 600; }
         </style>
     </head>
     <body>
-        <header>
-            <div>
-                <h1>Processing Station Status</h1>
-                <div class='muted'>System health, ingest, and viewer readiness</div>
-            </div>
-            <div class='muted'>Updated {datetime.now(timezone.utc).isoformat()}</div>
-        </header>
-        <div class='grid'>
-            <div class='card'>
-                <h3>Disk</h3>
-                <div class='metric'>{payload['system']['disk']['used_gb']} / {payload['system']['disk']['total_gb']} GB</div>
-                <div class='muted'>{payload['system']['disk']['percent']}% used</div>
-            </div>
-            <div class='card'>
-                <h3>Memory</h3>
-                <div class='metric'>{payload['system']['memory']['used_gb']} / {payload['system']['memory']['total_gb']} GB</div>
-                <div class='muted'>{payload['system']['memory']['percent']}% used</div>
-            </div>
-            <div class='card'>
-                <h3>CPU</h3>
-                <div class='metric'>{payload['system']['cpu_percent']}%</div>
-                <div class='muted'>Recent utilization</div>
-            </div>
-        </div>
-        <div class='grid'>
-            <div class='card'>
-                <h2>GPU</h2>
-                {gpu_section}
-            </div>
-            <div class='card'>
-                <h2>Sessions</h2>
-                {sessions_section}
-            </div>
-        </div>
-        <div style='padding: 0 24px 24px;'>
-            <p class='muted'>API endpoints: <a href='/docs'>/docs</a> | <a href='/api/v1/status'>/api/v1/status</a></p>
+        <div class="panel">
+            <h1>Processing Station API</h1>
+            <p class="muted">This container now exposes ingest + data endpoints only. Deploy the separate viewer container to browse stitched sessions, play proxies, and run natural-language search.</p>
+            <p>Default API port: <strong>8001</strong>. Configure CORS via <code>VIEWER_ALLOWED_ORIGINS</code>. Media is still served under <code>/media</code>.</p>
         </div>
     </body>
     </html>
     """
     return HTMLResponse(content=html)
-
 
 @app.get("/healthz")
 async def health() -> dict:
