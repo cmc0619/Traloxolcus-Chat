@@ -134,13 +134,17 @@ class RigState:
 
     def update_config(self, partial: dict) -> Config:
         for key, value in partial.items():
+            if key == "min_free_gb":
+                key = "free_space_min_gb"
             if value is not None and hasattr(self.config, key):
                 setattr(self.config, key, value)
         # ensure status reflects updated config
         self.camera_status.camera_id = self.config.camera_id
         self.camera_status.codec = self.config.codec
         self.camera_status.bitrate_mbps = self.config.bitrate_mbps
-        self.camera_status.audio_enabled = self.camera_status.audio_enabled
+        self.camera_status.audio_enabled = self.config.audio_enabled
+        self.camera_status.resolution = self.config.resolution
+        self.camera_status.fps = self.config.fps
         self._refresh_disk_estimate(self.camera_status.bitrate_mbps)
         return self.config
 
@@ -171,16 +175,16 @@ class RigState:
             self._refresh_disk_estimate(self.camera_status.bitrate_mbps)
 
     def _ensure_storage_capacity(self) -> None:
-        if self.camera_status.disk.free_gb < self.config.min_free_gb:
+        if self.camera_status.disk.free_gb < self.config.free_space_min_gb:
             raise ValueError("Insufficient free space")
 
     def _maybe_cleanup_storage(self) -> None:
-        if self.camera_status.disk.free_gb >= self.config.min_free_gb:
+        if self.camera_status.disk.free_gb >= self.config.free_space_min_gb:
             return
         for filename, record in list(self.recordings.items()):
             if record.offloaded:
                 self._delete_recording(filename)
-                if self.camera_status.disk.free_gb >= self.config.min_free_gb:
+                if self.camera_status.disk.free_gb >= self.config.free_space_min_gb:
                     break
 
 
