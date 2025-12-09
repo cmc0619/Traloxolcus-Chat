@@ -2,6 +2,8 @@
 
 A three-node Raspberry Pi 5 system for synchronized 4K soccer capture. Each node uses an Arducam IMX686 camera and NVMe storage, providing reliable 90+ minute recordings with web-based controls and GitHub-driven updates.
 
+See `PROCESSING_STATION.md` for the off-field processing station and cloud viewer design (GPU stitching + ML tagging with auth-protected search). A starter FastAPI implementation for ingest/search lives in `processing_station/`.
+
 ## System Overview
 - Nodes: CAM_L, CAM_C, CAM_R along the sideline with overlapping coverage; CAM_C is the NTP master.
 - Recording: 4K30 H.265 with continuous capture, local NVMe storage, and optional 720p “Grandma Mode” stream that never interrupts primary recording.
