@@ -193,6 +193,12 @@ class ConfigUpdate(BaseModel):
     wifi_password: Optional[str] = None
     duration_minutes_default: Optional[int] = Field(None, ge=1, le=240)
     free_space_min_gb: Optional[int] = Field(None, ge=1, le=500)
+    min_free_gb: Optional[int] = Field(
+        None,
+        ge=1,
+        le=500,
+        description="Deprecated alias for free_space_min_gb; kept for backward compatibility",
+    )
     resolution: Optional[str] = None
     fps: Optional[int] = None
     ap_ssid_prefix: Optional[str] = None
