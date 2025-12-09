@@ -70,13 +70,25 @@ class Config(BaseModel):
     camera_id: str
     bitrate_mbps: float = 30.0
     codec: str = "h265"
+    resolution: str = "3840x2160"
+    fps: int = 30
+    audio_enabled: bool = True
+    duration_minutes_default: int = 110
     ssid: Optional[str] = None
     ap_fallback_seconds: int = 30
     ap_ssid: str = "SOCCER_CAM"
     ap_password: Optional[str] = None
-    min_free_gb: float = 5.0
+    wifi_mesh_ssid: str = "SOCCER_MESH"
+    ap_ssid_prefix: str = "SOCCER_CAM"
+    wifi_password: Optional[str] = None
+    ap_mode_timeout_sec: int = 15
     production_mode: bool = True
     delete_after_confirm: bool = False
+    free_space_min_gb: int = 10
+    ntp_master_id: str = "CAM_C"
+    sync_offset_warn_ms: int = 5
+    update_repo: str = "traloxolcus/soccer-rig"
+    update_channel: str = "stable"
     version: str = "soccer-rig-1.2.0"
 
 
@@ -181,7 +193,6 @@ class ConfigUpdate(BaseModel):
     wifi_password: Optional[str] = None
     duration_minutes_default: Optional[int] = Field(None, ge=1, le=240)
     free_space_min_gb: Optional[int] = Field(None, ge=1, le=500)
-    min_free_gb: Optional[float] = Field(None, ge=0)
     resolution: Optional[str] = None
     fps: Optional[int] = None
     ap_ssid_prefix: Optional[str] = None

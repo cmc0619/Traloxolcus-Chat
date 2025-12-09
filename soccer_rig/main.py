@@ -129,6 +129,8 @@ def get_config() -> Dict[str, Any]:
 def update_config(update: ConfigUpdate) -> Dict[str, Any]:
     updated_fields = {}
     for field, value in update.model_dump(exclude_none=True).items():
+        if field == "min_free_gb":
+            field = "free_space_min_gb"
         if hasattr(settings, field):
             setattr(settings, field, value)
             updated_fields[field] = value
