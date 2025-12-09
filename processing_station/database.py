@@ -62,8 +62,29 @@ class Database:
                     source TEXT,
                     payload_json TEXT
                 );
+                CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+                    type,
+                    payload_json,
+                    content='events',
+                    content_rowid='id'
+                );
+                CREATE TRIGGER IF NOT EXISTS events_ai AFTER INSERT ON events BEGIN
+                    INSERT INTO events_fts(rowid, type, payload_json)
+                    VALUES (new.id, new.type, new.payload_json);
+                END;
+                CREATE TRIGGER IF NOT EXISTS events_ad AFTER DELETE ON events BEGIN
+                    INSERT INTO events_fts(events_fts, rowid, type, payload_json)
+                    VALUES('delete', old.id, old.type, old.payload_json);
+                END;
+                CREATE TRIGGER IF NOT EXISTS events_au AFTER UPDATE ON events BEGIN
+                    INSERT INTO events_fts(events_fts, rowid, type, payload_json)
+                    VALUES('delete', old.id, old.type, old.payload_json);
+                    INSERT INTO events_fts(rowid, type, payload_json)
+                    VALUES (new.id, new.type, new.payload_json);
+                END;
                 """
             )
+            conn.execute("INSERT INTO events_fts(events_fts) VALUES('rebuild')")
             conn.commit()
         self._initialized = True
 
@@ -170,17 +191,38 @@ class Database:
             ).fetchall()
         return rows
 
+    def session(self, session_id: str) -> sqlite3.Row | None:
+        self.initialize()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT s.id, s.started_at, s.notes,
+                    COUNT(DISTINCT c.id) AS camera_assets,
+                    COUNT(DISTINCT st.id) AS stitched_assets,
+                    COUNT(DISTINCT e.id) AS events
+                FROM sessions s
+                LEFT JOIN camera_assets c ON s.id = c.session_id
+                LEFT JOIN stitched_assets st ON s.id = st.session_id
+                LEFT JOIN events e ON s.id = e.session_id
+                WHERE s.id = ?
+                GROUP BY s.id
+                """,
+                (session_id,),
+            ).fetchone()
+        return row
+
     def search_events(self, query: str, session_id: str | None = None) -> list[sqlite3.Row]:
         self.initialize()
-        like_query = f"%{query.lower()}%"
         sql = (
-            "SELECT * FROM events WHERE lower(type || ' ' || COALESCE(payload_json, '')) LIKE ?"
-            " ORDER BY t_start_ms"
+            "SELECT e.* FROM events e "
+            "JOIN events_fts fts ON e.id = fts.rowid "
+            "WHERE fts MATCH ?"
         )
-        params: Sequence[str | None] = [like_query]
+        params: Sequence[str | None] = [query]
         if session_id:
-            sql = sql.replace("WHERE", "WHERE session_id = ? AND")
-            params = [session_id, like_query]
+            sql += " AND e.session_id = ?"
+            params = [query, session_id]
+        sql += " ORDER BY e.t_start_ms"
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return rows

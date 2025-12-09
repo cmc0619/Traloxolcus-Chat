@@ -80,6 +80,12 @@ class SessionSummary(BaseModel):
     camera_assets: int
     stitched_assets: int
     events: int
+    latest_proxy: Optional[str]
+
+
+class SessionDetail(SessionSummary):
+    stitched_fullres: Optional[str]
+    events_list: list[EventRecord]
 
 
 class ImportAck(BaseModel):
