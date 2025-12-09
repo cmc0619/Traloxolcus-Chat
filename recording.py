@@ -258,7 +258,7 @@ class Recorder:
         return {
             "camera_id": self.camera_id,
             "recording": self.recording,
-            "audio_enabled": self._audio_enabled,
+            "audio_enabled": self.audio_enabled,
             "dropped_frames": self._metrics.dropped_frames,
             "encode_errors": self._metrics.encode_errors,
             "last_pipeline_error": self.last_pipeline_error,
