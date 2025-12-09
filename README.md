@@ -3,7 +3,6 @@
 A three-node Raspberry Pi 5 system for synchronized 4K soccer capture. Each node uses an Arducam IMX686 camera and NVMe storage, providing reliable 90+ minute recordings with web-based controls and GitHub-driven updates.
 
 See `PROCESSING_STATION.md` for the off-field processing station and cloud viewer design (GPU stitching + ML tagging with auth-protected search). A starter FastAPI implementation for ingest/search lives in `processing_station/`, including a status dashboard on TCP 4220 that shows disk/memory/GPU utilization and ingest readiness.
-See `PROCESSING_STATION.md` for the off-field processing station and cloud viewer design (GPU stitching + ML tagging with auth-protected search). A starter FastAPI implementation for ingest/search lives in `processing_station/`.
 
 ## Processing Station Docker container
 - Build: `docker build -t processing-station .`
