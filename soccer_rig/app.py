@@ -1,8 +1,10 @@
+import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
-
-from . import status as status_service
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from .models import (
     Config,
     ConfigUpdate,
@@ -19,12 +21,29 @@ from .models import (
 )
 from .state import state
 
+UI_DIR = Path(__file__).parent / "webui"
+
 app = FastAPI(title="Soccer Rig", version="1.2.0")
+if UI_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
 
 
 @app.get("/api/v1/status", response_model=StatusResponse)
 def get_status() -> StatusResponse:
-    return status_service.current_status()
+    return state.current_status()
+
+
+@app.get("/api/v1/events")
+async def stream_status(request: Request) -> StreamingResponse:
+    async def event_generator():
+        while True:
+            payload = state.current_status().model_dump_json()
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(1)
+            if await request.is_disconnected():
+                break
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/v1/record/start", response_model=RecordingInfo)
@@ -129,4 +148,13 @@ def update_apply() -> UpdateStatus:
 def manifest() -> dict:
     """Return a simplified manifest for downstream tooling."""
     return state.manifest().model_dump()
+
+
+@app.get("/", include_in_schema=False)
+def ui_root():
+    """Serve the in-box dashboard UI."""
+    index = UI_DIR / "index.html"
+    if not index.exists():
+        return {"message": "Soccer Rig API", "version": state.config.version}
+    return FileResponse(index)
 

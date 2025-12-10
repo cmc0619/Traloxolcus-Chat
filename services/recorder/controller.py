@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from ..sync.telemetry import chrony_telemetry
 from . import gates
 from .manifest import RecordingManifest, write_manifest
 
@@ -27,16 +28,21 @@ class ActiveRecording:
     audio_enabled: bool
     bitrate_mbps: float
     codec: str
+    resolution: str
+    fps: int
+    offset_ms: float
+    start_time_master: datetime
+    start_time_local: datetime
     snapshot_b64: Optional[str] = None
 
 
 class RecorderController:
     """Manage a single camera recording session.
 
-    The controller can operate in `simulate` mode (default for CI) where the
-    pipeline command is not executed. In that mode we still honor readiness
-    gates, emit manifests, and write placeholder files so downstream code can
-    exercise the full flow.
+    The controller can operate in `simulate` mode where the pipeline command is
+    not executed. In that mode we still honor readiness gates, emit manifests,
+    and write placeholder files so downstream code can exercise the full flow
+    without camera hardware.
     """
 
     def __init__(
@@ -49,7 +55,7 @@ class RecorderController:
         resolution: str = "3840x2160",
         fps: int = 30,
         audio_enabled: bool = True,
-        simulate: bool = True,
+        simulate: bool = False,
     ) -> None:
         self.base_dir = base_dir
         self.camera_id = camera_id
@@ -77,6 +83,8 @@ class RecorderController:
         audio_enabled: Optional[bool] = None,
         bitrate_mbps: Optional[float] = None,
         codec: Optional[str] = None,
+        resolution: Optional[str] = None,
+        fps: Optional[int] = None,
         test_mode: bool = False,
     ) -> ActiveRecording:
         with self._lock:
@@ -95,14 +103,47 @@ class RecorderController:
             selected_bitrate = bitrate_mbps or self.bitrate_mbps
             selected_codec = codec or self.codec
             audio_flag = self.audio_enabled_default if audio_enabled is None else audio_enabled
+            selected_resolution = resolution or self.resolution
+            selected_fps = fps or self.fps
             target_duration = 10 if test_mode else None
+
+            if selected_codec not in {"h265", "h264"}:
+                raise RuntimeError(f"unsupported codec: {selected_codec}")
+
+            try:
+                width_str, height_str = selected_resolution.lower().split("x")
+                width = int(width_str)
+                height = int(height_str)
+            except (ValueError, AttributeError):
+                raise RuntimeError(f"invalid resolution: {selected_resolution}") from None
+
+            telemetry = chrony_telemetry(role="recorder")
 
             process: Optional[subprocess.Popen] = None
             if self.simulate:
                 file_path.write_bytes(b"simulated clip\n")
             else:
-                cmd = self._build_pipeline(file_path, selected_bitrate, selected_codec, audio_flag)
-                process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                cmd = self._build_pipeline(
+                    destination=file_path,
+                    bitrate_mbps=selected_bitrate,
+                    codec=selected_codec,
+                    audio_enabled=audio_flag,
+                    width=width,
+                    height=height,
+                    fps=selected_fps,
+                )
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                if process.stderr:
+                    threading.Thread(
+                        target=self._log_pipeline_output,
+                        args=(process.stderr,),
+                        daemon=True,
+                    ).start()
                 if target_duration:
                     threading.Thread(target=self._stop_after, args=(target_duration,), daemon=True).start()
 
@@ -117,6 +158,12 @@ class RecorderController:
                 audio_enabled=audio_flag,
                 bitrate_mbps=selected_bitrate,
                 codec=selected_codec,
+                resolution=selected_resolution,
+                fps=selected_fps,
+                offset_ms=telemetry.offset_ms,
+                start_time_master=telemetry.master_timestamp,
+                start_time_local=telemetry.local_timestamp,
+                snapshot_b64=None,
             )
             return self._active
 
@@ -144,12 +191,12 @@ class RecorderController:
             session_id=record.session_id,
             camera_id=record.camera_id,
             file_name=record.file_path.name,
-            start_time_master=record.started_at,
-            start_time_local=record.started_at,
-            offset_ms=0.0,
+            start_time_master=record.start_time_master,
+            start_time_local=record.start_time_local,
+            offset_ms=record.offset_ms,
             duration=duration,
-            resolution=self.resolution,
-            fps=self.fps,
+            resolution=record.resolution,
+            fps=record.fps,
             codec=record.codec,
             bitrate_mbps=record.bitrate_mbps,
             dropped_frames=0,
@@ -171,20 +218,32 @@ class RecorderController:
         }
 
     def _build_pipeline(
-        self, destination: Path, bitrate_mbps: float, codec: str, audio_enabled: bool
-    ) -> str:
-        audio_flag = "--audio 1" if audio_enabled else "--audio 0"
-        video_cmd = (
-            "libcamera-vid "
-            f"--width {self.resolution.split('x')[0]} --height {self.resolution.split('x')[1]} "
-            f"--framerate {self.fps} --codec {codec} --bitrate {int(bitrate_mbps * 1_000_000)} "
-            f"{audio_flag} --inline --timeout 0 -o -"
+        self,
+        *,
+        destination: Path,
+        bitrate_mbps: float,
+        codec: str,
+        audio_enabled: bool,
+        width: int,
+        height: int,
+        fps: int,
+    ) -> list[str]:
+        audio_stage = "-an"
+        if audio_enabled:
+            audio_stage = "-f alsa -thread_queue_size 1024 -i plughw:1,0 -map 0:v:0 -map 1:a:0 -c:a aac -b:a 128k"
+
+        video_stage = (
+            "libcamera-vid --nopreview "
+            f"--width {width} --height {height} --framerate {fps} "
+            f"--codec {codec} --bitrate {int(bitrate_mbps * 1_000_000)} --profile high --level 5.1 "
+            "--inline -t 0 -o -"
         )
-        ffmpeg_cmd = (
-            "ffmpeg -y -i pipe:0 -c:v copy "
-            f"-movflags +faststart -c:a aac -b:a 128k {destination}"
+        ffmpeg_stage = (
+            "ffmpeg -y -loglevel info -stats -i pipe:0 "
+            f"{audio_stage if audio_enabled else '-an'} -c:v copy -movflags +faststart {destination}"
         )
-        return f"{video_cmd} | {ffmpeg_cmd}"
+        pipeline = f"{video_stage} | {ffmpeg_stage}"
+        return ["bash", "-lc", pipeline]
 
     def _checksum(self, path: Path) -> Optional[str]:
         if not path.exists():
@@ -194,4 +253,10 @@ class RecorderController:
             for chunk in iter(lambda: handle.read(8192), b""):
                 digest.update(chunk)
         return digest.hexdigest()
+
+    def _log_pipeline_output(self, stream) -> None:  # pragma: no cover - threaded logging helper
+        for line in stream:
+            line = line.strip()
+            if line:
+                print(f"[recorder] {line}")
 

@@ -93,8 +93,7 @@ A single, de-duplicated roadmap that turns `SPEC.md` v1.2 into concrete work. Ph
 - Any storage encryption needs for field devices.
 
 ## Outstanding Work vs. Current Code
-- Recorder service is a stub: lacks real libcamera/ffmpeg pipeline, sync offsets, temperature/battery gating, and 4K/H.265 controls.
-- Sync-agent and mesh/AP scripts are unimplemented; `/status` currently reports simulated values only.
-- Web UI is missing; API routes exist but need frontend and websocket/SSE wiring.
-- Updater is a skeleton that checks GitHub but does not download/apply releases or honor “recording in progress” gates beyond stub responses.
-- Housekeeping (offload confirmation, retention, cleanup thresholds) needs background workers and real disk checks tied to manifests.
+- Recording API is still in-memory and bypasses the libcamera/ffmpeg controller; start/stop only adjust local counters, never launch the pipeline or write manifests, and temperature/battery/sync readings are warnings rather than gates.
+- Offload and retention are stubbed: confirmations only flip flags in memory, there is no checksum/file verification, and no background cleanup or download endpoints for recorded files and manifests.
+- Update endpoints simply bump an in-memory version string; there is no release download/apply flow or enforcement of “recording in progress” blocks beyond a single guard.
+- The UI/status layer is single-node with placeholder preview data; there is no mesh aggregation, lock-view snapshot, start-beep hook, or live preview endpoint for framing.
