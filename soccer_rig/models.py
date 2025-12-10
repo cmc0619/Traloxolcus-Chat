@@ -74,9 +74,13 @@ class Config(BaseModel):
     fps: int = 30
     audio_enabled: bool = True
     duration_minutes_default: int = 110
+    ssid: Optional[str] = None
+    ap_fallback_seconds: int = 30
+    ap_ssid: str = "SOCCER_CAM"
+    ap_password: Optional[str] = None
     wifi_mesh_ssid: str = "SOCCER_MESH"
     ap_ssid_prefix: str = "SOCCER_CAM"
-    wifi_password: str = "changeme123"
+    wifi_password: Optional[str] = None
     ap_mode_timeout_sec: int = 15
     production_mode: bool = True
     delete_after_confirm: bool = False
@@ -178,19 +182,29 @@ class ConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     camera_id: Optional[str] = None
-    bitrate_mbps: Optional[int] = Field(None, ge=5, le=50)
+    bitrate_mbps: Optional[float] = Field(None, ge=5, le=50)
     codec: Optional[str] = Field(None, pattern="^(h264|h265)$")
-    resolution: Optional[str] = None
-    fps: Optional[int] = None
     audio_enabled: Optional[bool] = None
-    duration_minutes_default: Optional[int] = Field(None, ge=1, le=240)
-    wifi_mesh_ssid: Optional[str] = None
-    ap_ssid_prefix: Optional[str] = None
-    wifi_password: Optional[str] = None
-    ap_mode_timeout_sec: Optional[int] = None
     production_mode: Optional[bool] = None
     delete_after_confirm: Optional[bool] = None
+    ssid: Optional[str] = None
+    ap_fallback_seconds: Optional[int] = None
+    ap_ssid: Optional[str] = None
+    ap_password: Optional[str] = None
+    wifi_mesh_ssid: Optional[str] = None
+    wifi_password: Optional[str] = None
+    duration_minutes_default: Optional[int] = Field(None, ge=1, le=240)
     free_space_min_gb: Optional[int] = Field(None, ge=1, le=500)
+    min_free_gb: Optional[int] = Field(
+        None,
+        ge=1,
+        le=500,
+        description="Deprecated alias for free_space_min_gb; kept for backward compatibility",
+    )
+    resolution: Optional[str] = None
+    fps: Optional[int] = None
+    ap_ssid_prefix: Optional[str] = None
+    ap_mode_timeout_sec: Optional[int] = None
     ntp_master_id: Optional[str] = None
     sync_offset_warn_ms: Optional[int] = None
     update_repo: Optional[str] = None

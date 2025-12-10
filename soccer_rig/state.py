@@ -140,7 +140,9 @@ class RigState:
             raise ValueError(f"Unsupported config fields: {unsupported_list}")
 
         for key, value in partial.items():
-            if value is not None:
+            if key == "min_free_gb":
+                key = "free_space_min_gb"
+            if value is not None and hasattr(self.config, key):
                 setattr(self.config, key, value)
         # ensure status reflects updated config
         self.camera_status.camera_id = self.config.camera_id
