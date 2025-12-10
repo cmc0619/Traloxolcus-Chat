@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Soccer Rig Dashboard</title>
+  <link rel="stylesheet" href="/ui/style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Soccer Rig</h1>
+      <p id="version">Version</p>
+    </div>
+    <div class="status-chip" id="recording-pill">Idle</div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Live Status</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Camera</h3>
+          <p><strong>ID:</strong> <span id="camera-id">-</span></p>
+          <p><strong>Codec:</strong> <span id="codec">-</span></p>
+          <p><strong>Resolution:</strong> <span id="resolution">-</span> @ <span id="fps">-</span> fps</p>
+          <p><strong>Bitrate:</strong> <span id="bitrate">-</span> Mbps</p>
+          <p><strong>Audio:</strong> <span id="audio">-</span></p>
+        </div>
+        <div class="card">
+          <h3>Disk</h3>
+          <p><strong>Free:</strong> <span id="disk-free">-</span> GB</p>
+          <p><strong>Used:</strong> <span id="disk-used">-</span> GB</p>
+          <p><strong>Total:</strong> <span id="disk-total">-</span> GB</p>
+          <p><strong>Est. minutes left:</strong> <span id="disk-est">-</span></p>
+        </div>
+        <div class="card">
+          <h3>Sync</h3>
+          <p><strong>Role:</strong> <span id="sync-role">-</span></p>
+          <p><strong>Offset:</strong> <span id="sync-offset">-</span> ms</p>
+          <p><strong>Confidence:</strong> <span id="sync-confidence">-</span></p>
+        </div>
+        <div class="card">
+          <h3>System</h3>
+          <p><strong>Temperature:</strong> <span id="temperature">-</span> °C</p>
+          <p><strong>Battery:</strong> <span id="battery">-</span>%</p>
+          <p><strong>Warnings:</strong></p>
+          <ul id="warnings"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Controls</h2>
+      <div class="grid">
+        <form class="card" id="record-form">
+          <h3>Start Recording</h3>
+          <label>Session ID
+            <input id="session-id" name="session" placeholder="GAME_2024" required />
+          </label>
+          <label>Bitrate (Mbps)
+            <input id="start-bitrate" type="number" min="5" max="50" step="1" />
+          </label>
+          <label>Codec
+            <select id="start-codec">
+              <option value="">Default</option>
+              <option value="h265">H.265</option>
+              <option value="h264">H.264</option>
+            </select>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="start-audio" checked /> Enable audio
+          </label>
+          <button type="submit">Start</button>
+          <button type="button" id="stop-btn" class="secondary">Stop</button>
+          <button type="button" id="test-btn" class="secondary">10s Test</button>
+        </form>
+
+        <div class="card">
+          <h3>Node Actions</h3>
+          <button type="button" id="refresh-btn" class="secondary">Refresh Status</button>
+          <button type="button" id="shutdown-btn" class="danger">Shutdown Node</button>
+          <button type="button" id="update-btn" class="secondary">Check for Update</button>
+          <div id="action-result" class="note"></div>
+        </div>
+
+        <form class="card" id="config-form">
+          <h3>Config</h3>
+          <label>Bitrate (Mbps)
+            <input id="config-bitrate" type="number" min="5" max="50" step="1" />
+          </label>
+          <label>Codec
+            <select id="config-codec">
+              <option value="h265">H.265</option>
+              <option value="h264">H.264</option>
+            </select>
+          </label>
+          <label>Resolution
+            <input id="config-resolution" placeholder="3840x2160" />
+          </label>
+          <label>FPS
+            <input id="config-fps" type="number" min="1" max="60" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="config-audio" /> Audio enabled
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="config-production" /> Production mode
+          </label>
+          <button type="submit">Save Config</button>
+        </form>
+      </div>
+    </section>
+
+    <section>
+      <h2>Recordings</h2>
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>File</th>
+                <th>Duration (s)</th>
+                <th>Codec</th>
+                <th>Bitrate</th>
+                <th>Offloaded</th>
+              </tr>
+            </thead>
+            <tbody id="recordings-body"></tbody>
+          </table>
+        </div>
+        <button type="button" id="refresh-recordings" class="secondary">Reload recordings</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>
