@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 
 from .config import settings
 from .models import (
+    Config,
     ConfigUpdate,
     ConfirmRequest,
     SelfTestResult,

@@ -133,6 +133,12 @@ class RigState:
         return self.update_check()
 
     def update_config(self, partial: dict) -> Config:
+        allowed_fields = set(Config.model_fields.keys())
+        unsupported = set(partial) - allowed_fields
+        if unsupported:
+            unsupported_list = ", ".join(sorted(unsupported))
+            raise ValueError(f"Unsupported config fields: {unsupported_list}")
+
         for key, value in partial.items():
             if key == "min_free_gb":
                 key = "free_space_min_gb"

@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiskStatus(BaseModel):
@@ -68,7 +68,7 @@ class CameraStatus(BaseModel):
 
 class Config(BaseModel):
     camera_id: str
-    bitrate_mbps: float = 30.0
+    bitrate_mbps: int = 30
     codec: str = "h265"
     resolution: str = "3840x2160"
     fps: int = 30
@@ -179,6 +179,8 @@ class ConfirmRequest(BaseModel):
 
 
 class ConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     camera_id: Optional[str] = None
     bitrate_mbps: Optional[float] = Field(None, ge=5, le=50)
     codec: Optional[str] = Field(None, pattern="^(h264|h265)$")
