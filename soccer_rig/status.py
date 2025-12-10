@@ -1,8 +1,8 @@
 import shutil
-import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
+
+from services.sync.telemetry import chrony_telemetry
 
 from .config import settings
 from .models import DiskStatus, StatusResponse, SyncStatus
@@ -21,7 +21,7 @@ def _disk_status(base_dir: Path, bitrate_mbps: int) -> DiskStatus:
         free_gb=free_gb,
         used_gb=used_gb,
         free_percent=free_percent,
-        est_record_minutes_remaining=est_minutes,
+        estimated_minutes_remaining=est_minutes,
     )
 
 
@@ -35,34 +35,14 @@ def _estimate_record_time_minutes(free_gb: float, bitrate_mbps: int) -> int:
 
 def _sync_status() -> SyncStatus:
     role = "master" if settings.camera_id == settings.ntp_master_id else "client"
-    offset_ms, confidence = _read_chrony_offset()
-    if offset_ms is None:
-        offset_ms = 0.0
-        confidence = "unknown"
-    return SyncStatus(role=role, offset_ms=offset_ms, confidence=confidence, master_timestamp=datetime.now(timezone.utc))
-
-
-def _read_chrony_offset() -> tuple[Optional[float], str]:
-    try:
-        result = subprocess.run([
-            "chronyc",
-            "tracking",
-        ], capture_output=True, text=True, check=False, timeout=1)
-    except FileNotFoundError:
-        return None, "chrony-missing"
-    except subprocess.TimeoutExpired:
-        return None, "chrony-timeout"
-    if result.returncode != 0:
-        return None, "chrony-error"
-    offset_line = next((line for line in result.stdout.splitlines() if "Last offset" in line), None)
-    if not offset_line:
-        return None, "chrony-unknown"
-    try:
-        parts = offset_line.split(":")[-1].strip().split()
-        offset_seconds = float(parts[0])
-        return round(offset_seconds * 1000, 3), "good"
-    except (ValueError, IndexError):
-        return None, "chrony-parse"
+    telemetry = chrony_telemetry(role)
+    return SyncStatus(
+        role=telemetry.role,
+        offset_ms=telemetry.offset_ms,
+        confidence=telemetry.confidence,
+        master_timestamp=telemetry.master_timestamp,
+        local_timestamp=telemetry.local_timestamp,
+    )
 
 
 def _read_temperature() -> Optional[float]:

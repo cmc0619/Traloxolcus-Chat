@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, status
 
+from . import status as status_service
 from .models import (
-    CameraStatus,
     Config,
     ConfigUpdate,
     ConfirmRequest,
@@ -13,6 +13,7 @@ from .models import (
     RecordStopResponse,
     SelfTestResult,
     ShutdownResponse,
+    StatusResponse,
     TestRecordingResult,
     UpdateStatus,
 )
@@ -21,9 +22,9 @@ from .state import state
 app = FastAPI(title="Soccer Rig", version="1.2.0")
 
 
-@app.get("/api/v1/status", response_model=CameraStatus)
-def get_status() -> CameraStatus:
-    return state.camera_status
+@app.get("/api/v1/status", response_model=StatusResponse)
+def get_status() -> StatusResponse:
+    return status_service.current_status()
 
 
 @app.post("/api/v1/record/start", response_model=RecordingInfo)

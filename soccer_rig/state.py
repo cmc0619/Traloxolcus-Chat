@@ -23,7 +23,7 @@ class RigState:
         now = datetime.now(timezone.utc)
         disk = DiskStatus(total_gb=512.0, free_gb=480.0, estimated_minutes_remaining=120)
         sync = SyncStatus(
-            role="ntp-master",
+            role="master",
             offset_ms=0.0,
             confidence="locked",
             master_timestamp=now,
@@ -36,6 +36,7 @@ class RigState:
             active_session=None,
             disk=disk,
             sync=sync,
+            audio_enabled=self.config.audio_enabled,
             live_preview_url="/preview.jpg",
         )
         self.recordings: Dict[str, RecordingInfo] = {}
@@ -140,7 +141,7 @@ class RigState:
         self.camera_status.camera_id = self.config.camera_id
         self.camera_status.codec = self.config.codec
         self.camera_status.bitrate_mbps = self.config.bitrate_mbps
-        self.camera_status.audio_enabled = self.camera_status.audio_enabled
+        self.camera_status.audio_enabled = self.config.audio_enabled
         self._refresh_disk_estimate(self.camera_status.bitrate_mbps)
         return self.config
 
