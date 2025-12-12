@@ -2,7 +2,7 @@
 
 A three-node Raspberry Pi 5 system for synchronized 4K soccer capture. Each node uses an Arducam IMX686 camera and NVMe storage, providing reliable 90+ minute recordings with web-based controls and GitHub-driven updates.
 
-See `PROCESSING_STATION.md` for the off-field processing station and cloud viewer design (GPU stitching + ML tagging with auth-protected search). A starter FastAPI implementation for ingest/search lives in `processing_station/`, including a status dashboard on TCP 4220 that shows disk/memory/GPU utilization and ingest readiness.
+See `PROCESSING_STATION.md` for the off-field processing station and cloud viewer design (GPU stitching + ML tagging with auth-protected search). A starter FastAPI implementation for ingest/search lives in `processing_station/`, including a status dashboard on TCP 8001 that shows disk/memory/GPU utilization and ingest readiness.
 
 ## Processing Station Docker container
 - Build: `docker build -t processing-station .`
@@ -10,6 +10,11 @@ See `PROCESSING_STATION.md` for the off-field processing station and cloud viewe
 - Health check: `curl http://localhost:8001/healthz`
 
 The container starts the FastAPI ingest/search service on port 8001 and writes uploads/metadata under `/app/data` (mount a host volume to persist between restarts).
+
+### Docker Compose quick start
+- Bring up the API with persisted data: `docker compose up --build`
+- Override viewer credentials if desired: set `VIEWER_USERNAME`/`VIEWER_PASSWORD` in your environment before running compose.
+- Access the status page at `http://localhost:8001/` and the health check at `/healthz`.
 
 ## System Overview
 - Nodes: CAM_L, CAM_C, CAM_R along the sideline with overlapping coverage; CAM_C is the NTP master.

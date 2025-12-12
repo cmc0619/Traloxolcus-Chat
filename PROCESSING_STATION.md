@@ -47,7 +47,7 @@ Design for a GPU-equipped processing station that ingests recordings from the si
 - **Failure handling**: orchestrator auto-retries failed stitch/ML jobs; alerts if a camera asset is missing after timeout.
 - **Storage hygiene**: nightly job to purge local assets already confirmed in viewer + cloud storage; keep manifests and NDJSON for audit.
 - **Metrics**: export Prometheus endpoints (GPU utilization, queue depth, job latency, upload success rate).
-- **Ops dashboard**: FastAPI runs on TCP `4220` and serves `/` as a status page showing disk/memory/GPU utilization plus ingest readiness (camera uploads received, stitched assets, viewer-ready flag). Raw JSON is available at `/api/v1/status`.
+- **Ops dashboard**: FastAPI runs on TCP `8001` and serves `/` as a status page showing disk/memory/GPU utilization plus ingest readiness (camera uploads received, stitched assets, viewer-ready flag). Raw JSON is available at `/api/v1/status`.
 
 ## Cloud Viewer Node
 - **Purpose**: Authenticated portal for staff/players to browse stitched matches, search for events, and request clips.
